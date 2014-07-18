@@ -15,13 +15,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.jasondev.gossipocolypse.cassandra;
+package org.apache.cassandra.gms;
 
 import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.cassandra.gms.helpers.CustomMessagingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,16 +31,18 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 
-public class GossipDigestAckVerbHandler implements IVerbHandler<GossipDigestAck>
+public class GossipDigestAckVerbHandlerSimulator implements IVerbHandler<GossipDigestAck>
 {
-    private static final Logger logger = LoggerFactory.getLogger(GossipDigestAckVerbHandler.class);
+    private static final Logger logger = LoggerFactory.getLogger(GossipDigestAckVerbHandlerSimulator.class);
 
     public void doVerb(MessageIn<GossipDigestAck> message, int id)
+    {   }
+    public void doVerb(MessageIn<GossipDigestAck> message, GossiperSimulator sender, GossiperSimulator target)
     {
         InetAddress from = message.from;
         if (logger.isTraceEnabled())
             logger.trace("Received a GossipDigestAckMessage from {}", from);
-        if (!Gossiper.instance.isEnabled() && !Gossiper.instance.isInShadowRound())
+        if (!target.isEnabled() && !target.isInShadowRound())
         {
             if (logger.isTraceEnabled())
                 logger.trace("Ignoring GossipDigestAckMessage because gossip is disabled");
@@ -54,15 +57,15 @@ public class GossipDigestAckVerbHandler implements IVerbHandler<GossipDigestAck>
         if (epStateMap.size() > 0)
         {
             /* Notify the Failure Detector */
-            Gossiper.instance.notifyFailureDetector(epStateMap);
-            Gossiper.instance.applyStateLocally(epStateMap);
+            target.notifyFailureDetector(epStateMap);
+            target.applyStateLocally(epStateMap);
         }
 
-        if (Gossiper.instance.isInShadowRound())
+        if (target.isInShadowRound())
         {
             if (logger.isDebugEnabled())
                 logger.debug("Finishing shadow round with {}", from);
-            Gossiper.instance.finishShadowRound();
+            target.finishShadowRound();
             return; // don't bother doing anything else, we have what we came for
         }
 
@@ -71,16 +74,18 @@ public class GossipDigestAckVerbHandler implements IVerbHandler<GossipDigestAck>
         for (GossipDigest gDigest : gDigestList)
         {
             InetAddress addr = gDigest.getEndpoint();
-            EndpointState localEpStatePtr = Gossiper.instance.getStateForVersionBiggerThan(addr, gDigest.getMaxVersion());
+            EndpointState localEpStatePtr = target.getStateForVersionBiggerThan(addr, gDigest.getMaxVersion());
             if (localEpStatePtr != null)
                 deltaEpStateMap.put(addr, localEpStatePtr);
         }
 
-        MessageOut<GossipDigestAck2> gDigestAck2Message = new MessageOut<GossipDigestAck2>(MessagingService.Verb.GOSSIP_DIGEST_ACK2,
+        MessageOut<GossipDigestAck2> gDigestAck2Message = new MessageOut<GossipDigestAck2>(target.broadcastAddr,
+                                                                                MessagingService.Verb.GOSSIP_DIGEST_ACK2,
                                                                                            new GossipDigestAck2(deltaEpStateMap),
-                                                                                           GossipDigestAck2.serializer);
+                                                                                           GossipDigestAck2.serializer,
+                                                                                           CustomMessagingService.parameters);
         if (logger.isTraceEnabled())
             logger.trace("Sending a GossipDigestAck2Message to {}", from);
-        MessagingService.instance().sendOneWay(gDigestAck2Message, from);
+        CustomMessagingService.instance().sendOneWay(gDigestAck2Message, from, sender);
     }
 }

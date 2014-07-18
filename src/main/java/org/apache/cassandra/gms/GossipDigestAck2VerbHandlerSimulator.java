@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.jasondev.gossipocolypse.cassandra;
+package org.apache.cassandra.gms;
 
 import java.net.InetAddress;
 import java.util.Map;
@@ -26,18 +26,21 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.MessageIn;
 
-public class GossipDigestAck2VerbHandler implements IVerbHandler<GossipDigestAck2>
+public class GossipDigestAck2VerbHandlerSimulator implements IVerbHandler<GossipDigestAck2>
 {
-    private static final Logger logger = LoggerFactory.getLogger(GossipDigestAck2VerbHandler.class);
+    private static final Logger logger = LoggerFactory.getLogger(GossipDigestAck2VerbHandlerSimulator.class);
 
     public void doVerb(MessageIn<GossipDigestAck2> message, int id)
+    {   }
+
+    public void doVerb(MessageIn<GossipDigestAck2> message, GossiperSimulator target)
     {
         if (logger.isTraceEnabled())
         {
             InetAddress from = message.from;
             logger.trace("Received a GossipDigestAck2Message from {}", from);
         }
-        if (!Gossiper.instance.isEnabled())
+        if (!target.isEnabled())
         {
             if (logger.isTraceEnabled())
                 logger.trace("Ignoring GossipDigestAck2Message because gossip is disabled");
@@ -45,7 +48,7 @@ public class GossipDigestAck2VerbHandler implements IVerbHandler<GossipDigestAck
         }
         Map<InetAddress, EndpointState> remoteEpStateMap = message.payload.getEndpointStateMap();
         /* Notify the Failure Detector */
-        Gossiper.instance.notifyFailureDetector(remoteEpStateMap);
-        Gossiper.instance.applyStateLocally(remoteEpStateMap);
+        target.notifyFailureDetector(remoteEpStateMap);
+        target.applyStateLocally(remoteEpStateMap);
     }
 }

@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.jasondev.gossipocolypse.cassandra;
+package org.apache.cassandra.gms;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -26,7 +26,12 @@ import java.util.concurrent.*;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.Uninterruptibles;
 
-import net.jasondev.gossipocolypse.cassandra.helpers.CustomMessagingService;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
+import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.dht.Murmur3Partitioner;
+import org.apache.cassandra.gms.helpers.CustomMessagingService;
+import org.apache.cassandra.net.MessageOut;
+import org.apache.cassandra.net.MessagingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,21 +50,20 @@ import com.google.common.collect.ImmutableList;
  * the Failure Detector.
  */
 
-public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
+public class GossiperSimulator implements IFailureDetectionEventListener//, GossiperMBean
 {
-    private static final String MBEAN_NAME = "org.apache.cassandra.net:type=Gossiper";
+    private static final String MBEAN_NAME = "org.apache.gms.net:type=Gossiper";
 
-    private final ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1);
+    private final ScheduledThreadPoolExecutor executor;
 
     final ApplicationState[] STATES = ApplicationState.values();
     final List<String> DEAD_STATES = Arrays.asList(VersionedValue.REMOVING_TOKEN, VersionedValue.REMOVED_TOKEN,
                                                           VersionedValue.STATUS_LEFT, VersionedValue.HIBERNATE);
-
     private ScheduledFuture<?> scheduledGossipTask;
     public final static int intervalInMillis = 1000;
     public static final int RING_DELAY = 30 * 1000;
     public final static int QUARANTINE_DELAY = RING_DELAY * 2;
-    private static final Logger logger = LoggerFactory.getLogger(Gossiper.class);
+    private static final Logger logger = LoggerFactory.getLogger(GossiperSimulator.class);
 
     public static final long aVeryLongTime = 259200 * 1000; // 3 days
     private long FatClientTimeout;
@@ -99,7 +103,9 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
 
     private volatile long lastProcessedMessageAt = System.currentTimeMillis();
     
-    private final InetAddress broadcastAddr;
+    public final InetAddress broadcastAddr;
+    public static final IPartitioner partitioner = new Murmur3Partitioner();
+    public static final VersionedValue.VersionedValueFactory valueFactory = new VersionedValue.VersionedValueFactory(partitioner);
 
     private class GossipTask implements Runnable
     {
@@ -121,9 +127,11 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
                     GossipDigestSyn digestSynMessage = new GossipDigestSyn("gossipocolypse",
                                                                            "BigFunTimePartitoner",
                                                                            gDigests);
-                    MessageOut<GossipDigestSyn> message = new MessageOut<GossipDigestSyn>(MessagingService.Verb.GOSSIP_DIGEST_SYN,
+                    MessageOut<GossipDigestSyn> message = new MessageOut<GossipDigestSyn>(broadcastAddr,
+                                                                                          MessagingService.Verb.GOSSIP_DIGEST_SYN,
                                                                                           digestSynMessage,
-                                                                                          GossipDigestSyn.serializer);
+                                                                                          GossipDigestSyn.serializer,
+                                                                                          CustomMessagingService.parameters);
                     /* Gossip to some random live member */
                     boolean gossipedToSeed = doGossipToLiveMember(message);
 
@@ -159,19 +167,21 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
         }
     }
 
-    public Gossiper(InetAddress broadcastAddr, Set<InetAddress> incomingSeeds)
+    public GossiperSimulator(InetAddress broadcastAddr, List<InetAddress> incomingSeeds)
     {
         this.broadcastAddr = broadcastAddr;
         // half of QUARATINE_DELAY, to ensure justRemovedEndpoints has enough leeway to prevent re-gossip
         FatClientTimeout = (long) (QUARANTINE_DELAY / 2);
         /* register with the Failure Detector for receiving Failure detector events */
-        FailureDetector.instance.registerFailureDetectionEventListener(this);
+//        FailureDetector.instance.registerFailureDetectionEventListener(this);
         for (InetAddress seed : incomingSeeds)
         {
             if (seed.equals(getBroadcastAddress()))
                 continue;
             seeds.add(seed);
         }
+
+        executor = new ScheduledThreadPoolExecutor(1, new NamedThreadFactory("gossiper_" + broadcastAddr.toString()));
     }
 
     private InetAddress getBroadcastAddress()
@@ -342,7 +352,7 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
         liveEndpoints.remove(endpoint);
         unreachableEndpoints.remove(endpoint);
         // do not remove endpointState until the quarantine expires
-        FailureDetector.instance.remove(endpoint);
+//        FailureDetector.instance.remove(endpoint);
         //gossipocolypse
 //        MessagingService.instance().resetVersion(endpoint);
         quarantineEndpoint(endpoint);
@@ -547,7 +557,7 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
         InetAddress to = liveEndpoints.get(index);
         if (logger.isTraceEnabled())
             logger.trace("Sending a GossipDigestSyn to {} ...", to);
-        CustomMessagingService.instance().sendOneWay(message, to);
+        CustomMessagingService.instance().sendOneWay(message, to, this);
         return seeds.contains(to);
     }
 
@@ -641,7 +651,7 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
             if (endpoint.equals(getBroadcastAddress()))
                 continue;
 
-            FailureDetector.instance.interpret(endpoint);
+//            FailureDetector.instance.interpret(endpoint);
             EndpointState epState = endpointStateMap.get(endpoint);
             if (epState != null)
             {
@@ -790,7 +800,7 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
     {
         for (Entry<InetAddress, EndpointState> entry : remoteEpStateMap.entrySet())
         {
-            notifyFailureDetector(entry.getKey(), entry.getValue());
+//            notifyFailureDetector(entry.getKey(), entry.getValue());
         }
     }
 
@@ -1001,7 +1011,7 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
             else
             {
                 // this is a new node, report it to the FD in case it is the first time we are seeing it AND it's not alive
-                FailureDetector.instance.report(ep);
+//                FailureDetector.instance.report(ep);
                 handleMajorStateChange(ep, remoteState);
             }
         }
@@ -1162,8 +1172,8 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
             logger.trace("gossip started with generation " + localState.getHeartBeatState().getGeneration());
 
         scheduledGossipTask = executor.scheduleWithFixedDelay(new GossipTask(),
-                                                              Gossiper.intervalInMillis,
-                                                              Gossiper.intervalInMillis,
+                                                              GossiperSimulator.intervalInMillis,
+                                                              GossiperSimulator.intervalInMillis,
                                                               TimeUnit.MILLISECONDS);
     }
 
@@ -1218,12 +1228,11 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
     // initialize local HB state if needed, i.e., if gossiper has never been started before.
     public void maybeInitializeLocalState(int generationNbr)
     {
-        HeartBeatState hbState = new HeartBeatState(generationNbr);
+        HeartBeatState hbState = new UniqueHeartBeatState(generationNbr);
         EndpointState localState = new EndpointState(hbState);
         localState.markAlive();
         endpointStateMap.putIfAbsent(getBroadcastAddress(), localState);
     }
-
 
     /**
      * Add an endpoint we knew about previously, but whose state is unknown
@@ -1266,7 +1275,7 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
         // Notifications may have taken some time, so preventively raise the version
         // of the new value, otherwise it could be ignored by the remote node
         // if another value with a newer version was received in the meantime:
-        value = StorageService.instance.valueFactory.cloneWithHigherVersion(value);
+        value = valueFactory.cloneWithHigherVersion(value);
         // Add to local application state and fire "on change" notifications:
         epState.addApplicationState(state, value);
         doOnChangeNotifications(epAddr, state, value);
@@ -1280,7 +1289,7 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
         Uninterruptibles.sleepUninterruptibly(intervalInMillis * 2, TimeUnit.MILLISECONDS);
         MessageOut message = new MessageOut(MessagingService.Verb.GOSSIP_SHUTDOWN);
         for (InetAddress ep : liveEndpoints)
-            CustomMessagingService.instance().sendOneWay(message, ep);
+            CustomMessagingService.instance().sendOneWay(message, ep, this);
     }
 
     public boolean isEnabled()
@@ -1309,8 +1318,8 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
         EndpointState localState = oldState == null ? newState : oldState;
 
         // always add the version state
-        localState.addApplicationState(ApplicationState.NET_VERSION, StorageService.instance.valueFactory.networkVersion());
-        localState.addApplicationState(ApplicationState.HOST_ID, StorageService.instance.valueFactory.hostId(uuid));
+        localState.addApplicationState(ApplicationState.NET_VERSION, valueFactory.networkVersion());
+        localState.addApplicationState(ApplicationState.HOST_ID, valueFactory.hostId(uuid));
     }
 
     @VisibleForTesting
@@ -1341,7 +1350,7 @@ public class Gossiper implements IFailureDetectionEventListener//, GossiperMBean
 
     public static long computeExpireTime()
     {
-        return System.currentTimeMillis() + Gossiper.aVeryLongTime;
+        return System.currentTimeMillis() + GossiperSimulator.aVeryLongTime;
     }
 
 }
