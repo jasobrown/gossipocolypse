@@ -22,12 +22,12 @@ public class Simulator
         System.setProperty("cassandra.config", "file://" + cwd + "/src/main/resources/cassandra.yaml");
 
         Simulator simulator = new Simulator();
-        simulator.runSimulation(3, 25, 10);
-        simulator.runSimulation(3, 50, 10);
-        simulator.runSimulation(3, 100, 10);
-        simulator.runSimulation(6, 200, 10);
-        simulator.runSimulation(6, 400, 10);
-        simulator.runSimulation(12, 800, 10);
+//        simulator.runSimulation(3, 25, 10);
+//        simulator.runSimulation(3, 50, 10);
+//        simulator.runSimulation(3, 100, 10);
+//        simulator.runSimulation(6, 200, 10);
+//        simulator.runSimulation(6, 400, 10);
+//        simulator.runSimulation(12, 800, 10);
         simulator.runSimulation(20, 1200, 10);
 
         System.exit(0);
@@ -220,7 +220,10 @@ public class Simulator
 
                 if (!peerAddrs.isEmpty())
                 {
-                    logger.debug("hasConvergedByInspection: unknown nodes: current node {} doesn't know about the following nodes: {}", simulator.broadcastAddr, peerAddrs);
+                    if (peerAddrs.size() < 8)
+                        logger.debug("hasConvergedByInspection: unknown nodes: current node {} doesn't know about the following nodes: {}", simulator.broadcastAddr, peerAddrs);
+                    else
+                        logger.debug("hasConvergedByInspection: unknown nodes: current node {} doesn't know about {} nodes (out of {} total)", new Object[]{simulator.broadcastAddr, peerAddrs.size(), gossipers.size()});
                     return false;
                 }
             }

@@ -32,4 +32,5 @@
 
     <logger name="com.thinkaurelius.thrift" level="ERROR"/>
     <logger name="org.apache.cassandra.gms" level="WARN"/>
+    <logger name="org.apache.cassandra.gms.Simulator" level="DEBUG"/>
 </configuration>

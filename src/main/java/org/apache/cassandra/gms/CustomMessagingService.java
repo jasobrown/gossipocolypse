@@ -6,7 +6,11 @@ import org.apache.cassandra.net.MessageOut;
 import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
+import com.google.common.util.concurrent.Uninterruptibles;
 
 public class CustomMessagingService
 {
@@ -15,7 +19,12 @@ public class CustomMessagingService
     private static CustomMessagingService INSTANCE = new CustomMessagingService();
 
     public final Map<InetAddress, GossiperSimulator> gossipers = new ConcurrentHashMap<>();
+    private final Random random;
 
+    public CustomMessagingService()
+    {
+        random = new Random(System.nanoTime());
+    }
 
     public static CustomMessagingService instance()
     {
@@ -50,6 +59,15 @@ public class CustomMessagingService
                 break;
         }
     }
+
+    private void generateDelay()
+    {
+        // would love to do some neato probability distributions, but, alas, I'm not smart enough <sigh>
+        double d = random.nextDouble();
+        long delay = (long)(10000L * d);
+        Uninterruptibles.sleepUninterruptibly(delay, TimeUnit.MICROSECONDS);
+    }
+
 
     public void register(GossiperSimulator gossiper)
     {
