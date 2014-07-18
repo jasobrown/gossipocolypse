@@ -29,7 +29,6 @@ import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Murmur3Partitioner;
-import org.apache.cassandra.gms.helpers.CustomMessagingService;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.slf4j.Logger;
@@ -106,6 +105,8 @@ public class GossiperSimulator implements IFailureDetectionEventListener//, Goss
     public final InetAddress broadcastAddr;
     public static final IPartitioner partitioner = new Murmur3Partitioner();
     public static final VersionedValue.VersionedValueFactory valueFactory = new VersionedValue.VersionedValueFactory(partitioner);
+    public CyclicBarrier roundBarrier;
+
 
     private class GossipTask implements Runnable
     {
@@ -113,14 +114,16 @@ public class GossiperSimulator implements IFailureDetectionEventListener//, Goss
         {
             try
             {
-                //wait on messaging service to start listening
-
+                roundBarrier.await();
                 /* Update the local heartbeat counter. */
                 endpointStateMap.get(getBroadcastAddress()).getHeartBeatState().updateHeartBeat();
                 if (logger.isTraceEnabled())
                     logger.trace("My heartbeat is now " + endpointStateMap.get(getBroadcastAddress()).getHeartBeatState().getHeartBeatVersion());
                 final List<GossipDigest> gDigests = new ArrayList<GossipDigest>();
                 makeRandomGossipDigest(gDigests);
+
+
+
 
                 if (gDigests.size() > 0)
                 {
@@ -167,9 +170,10 @@ public class GossiperSimulator implements IFailureDetectionEventListener//, Goss
         }
     }
 
-    public GossiperSimulator(InetAddress broadcastAddr, List<InetAddress> incomingSeeds)
+    public GossiperSimulator(InetAddress broadcastAddr, List<InetAddress> incomingSeeds, CyclicBarrier barrier)
     {
         this.broadcastAddr = broadcastAddr;
+        this.roundBarrier = barrier;
         // half of QUARATINE_DELAY, to ensure justRemovedEndpoints has enough leeway to prevent re-gossip
         FatClientTimeout = (long) (QUARANTINE_DELAY / 2);
         /* register with the Failure Detector for receiving Failure detector events */
@@ -390,7 +394,7 @@ public class GossiperSimulator implements IFailureDetectionEventListener//, Goss
      *
      * @param gDigests list of Gossip Digests.
      */
-    private void makeRandomGossipDigest(List<GossipDigest> gDigests)
+    public void makeRandomGossipDigest(List<GossipDigest> gDigests)
     {
         EndpointState epState;
         int generation = 0;
@@ -1250,11 +1254,11 @@ public class GossiperSimulator implements IFailureDetectionEventListener//, Goss
         if (epState != null)
         {
             logger.debug("not replacing a previous epState for {}, but reusing it: {}", ep, epState);
-            epState.setHeartBeatState(new HeartBeatState(0));
+            epState.setHeartBeatState(new UniqueHeartBeatState(0));
         }
         else
         {
-            epState = new EndpointState(new HeartBeatState(0));
+            epState = new EndpointState(new UniqueHeartBeatState(0));
         }
 
 
@@ -1290,6 +1294,13 @@ public class GossiperSimulator implements IFailureDetectionEventListener//, Goss
         MessageOut message = new MessageOut(MessagingService.Verb.GOSSIP_SHUTDOWN);
         for (InetAddress ep : liveEndpoints)
             CustomMessagingService.instance().sendOneWay(message, ep, this);
+    }
+
+    public void terminate()
+    {
+        if (scheduledGossipTask != null)
+            scheduledGossipTask.cancel(false);
+        executor.shutdownNow();
     }
 
     public boolean isEnabled()

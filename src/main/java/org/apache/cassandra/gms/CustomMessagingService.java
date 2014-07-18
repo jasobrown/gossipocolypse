@@ -1,6 +1,5 @@
-package org.apache.cassandra.gms.helpers;
+package org.apache.cassandra.gms;
 
-import org.apache.cassandra.gms.*;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 
@@ -11,16 +10,23 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class CustomMessagingService
 {
-    private static final CustomMessagingService INSTANCE = new CustomMessagingService();
+    public static final Map<String, byte[]> parameters = new HashMap<String, byte[]>();
+
+    private static CustomMessagingService INSTANCE = new CustomMessagingService();
+
+    public final Map<InetAddress, GossiperSimulator> gossipers = new ConcurrentHashMap<>();
+
 
     public static CustomMessagingService instance()
     {
         return INSTANCE;
     }
 
-    public static final Map<InetAddress, GossiperSimulator> gossipers = new ConcurrentHashMap<>();
-
-    public static final Map<String, byte[]> parameters = new HashMap<String, byte[]>();
+    //should only be called at the beginning on a simulation
+    public static void renewInstance()
+    {
+        INSTANCE = new CustomMessagingService();
+    }
 
     public void sendOneWay(MessageOut message, InetAddress to, GossiperSimulator sender)
     {
@@ -45,7 +51,7 @@ public class CustomMessagingService
         }
     }
 
-    public static void register(GossiperSimulator gossiper)
+    public void register(GossiperSimulator gossiper)
     {
         gossipers.put(gossiper.broadcastAddr, gossiper);
     }

@@ -20,11 +20,9 @@ package org.apache.cassandra.gms;
 import java.net.InetAddress;
 import java.util.*;
 
-import org.apache.cassandra.gms.helpers.CustomMessagingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;

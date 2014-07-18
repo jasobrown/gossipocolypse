@@ -31,5 +31,5 @@
     </root>
 
     <logger name="com.thinkaurelius.thrift" level="ERROR"/>
-    <logger name="org.apache.cassandra.gms" level="TRACE"/>
+    <logger name="org.apache.cassandra.gms" level="WARN"/>
 </configuration>
